@@ -1,1 +1,27 @@
+# === Secrets & Config ===
 .env
+config/members.toml
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+
+# === Data & Storage ===
+data/
+logs/
+exports/
+
+# === Testing ===
+.pytest_cache/
+.coverage
+htmlcov/
+
+# === Editors ===
+.vscode/
+.idea/
+*.swp

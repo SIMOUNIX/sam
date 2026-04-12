@@ -1,0 +1,5 @@
+[families]
+    name="YOUR_FAMILYNAME"
+    [families.members]
+    firstname="YOUR_FIRSTNAME"
+    discord_id="YOUR_ID"

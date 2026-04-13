@@ -1,27 +1,33 @@
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.prompt import Prompt
 
-from sam.config.loader import load_config
-from sam.core.memory.structured import configure_session, get_session
-
-# from sam.core.llm.client import get_llm_client
+from sam.core.llm.client import get_llm_client
 
 load_dotenv()
+console = Console()
 
 
-def main():
-    configure_session()
+def start():
+    client = get_llm_client()
+    messages = []
+    console.print("[bold green]SAM[/] ready. Ctrl+C to quit.\n")
 
-    with get_session() as session:
-        print(session.is_active)
-    # client = get_llm_client()
-
-    # response = client.chat([{"role": "user", "content": "Say hello in one sentence."}])
-
-    # print(response)
-
-    config = load_config("config/members.toml")
-    print(config)
+    try:
+        while True:
+            user_input = Prompt.ask("[bold cyan]you[/]")
+            if not user_input:
+                continue
+            messages.append({"role": "user", "content": user_input})
+            response = client.chat(messages)
+            messages.append({"role": "assistant", "content": response})
+            console.print("[bold green]sam[/]")
+            console.print(Markdown(response))
+            console.print()
+    except KeyboardInterrupt:
+        console.print("[bold red]\nExiting...[/]")
 
 
 if __name__ == "__main__":
-    main()
+    start()

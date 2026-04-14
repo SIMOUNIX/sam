@@ -29,9 +29,6 @@ class Memory(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str] = mapped_column(
-        String, nullable=False
-    )  # e.g. "preference", "habit", "fact"
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )

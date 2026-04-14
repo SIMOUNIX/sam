@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
@@ -20,9 +22,11 @@ def start():
             "role": "system",
             "content": (
                 f"You are SAM, a personal assistant for families.\n"
+                f"Today is {datetime.now().strftime('%A, %B %d %Y')}.\n"
                 f"Here is the family configuration: {config}\n\n"
                 f"Whenever you learn a new fact, preference, or relationship about a member, "
                 f"immediately call save_memory using their discord_id from the config above."
+                f"Whenever you learn an event about a member save it using save_event."
             ),
         }
     ]
@@ -33,7 +37,13 @@ def start():
             user_input = Prompt.ask("[bold cyan]you[/]")
             if not user_input:
                 continue
-            messages.append({"role": "user", "content": user_input})
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"[{datetime.now().strftime('%H:%M')}] {user_input}",
+                }
+            )
             response = client.chat(
                 messages=messages, tools=TOOLS, names_to_functions=NAMES_TO_FUNCTIONS
             )

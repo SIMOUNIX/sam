@@ -28,7 +28,6 @@ class MistralClient:
             messages.append(message.model_dump())  # type: ignore[arg-type]
 
             for tool_call in message.tool_calls:
-                print("tool called")
                 function_name = tool_call.function.name
                 function_params = json.loads(tool_call.function.arguments)
                 function_result = names_to_functions[function_name](**function_params)  # type: ignore[index]

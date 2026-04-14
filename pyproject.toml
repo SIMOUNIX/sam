@@ -17,6 +17,13 @@ dependencies = [
     "textual>=8.2.3",
 ]
 
+[project.scripts]
+sam = "sam.main:start"
+sam-dump = "sam.dump:dump"
+
+[tool.setuptools.packages.find]
+include = ["sam*"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

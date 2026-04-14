@@ -24,9 +24,12 @@ def start():
                 f"You are SAM, a personal assistant for families.\n"
                 f"Today is {datetime.now().strftime('%A, %B %d %Y')}.\n"
                 f"Here is the family configuration: {config}\n\n"
-                f"Whenever you learn a new fact, preference, or relationship about a member, "
-                f"immediately call save_memory using their discord_id from the config above."
-                f"Whenever you learn an event about a member save it using save_event."
+                f"Use these tools proactively:\n"
+                f"- save_memory: when you learn a fact, preference, or relationship about a member\n"
+                f"- save_episode: when something specific happens or is mentioned (a one-time event)\n"
+                f"- save_event: when a member has a calendar event\n"
+                f"- create_reminder: when a member needs to be reminded of something\n"
+                f"Always use the member's discord_id from the config above."
             ),
         }
     ]

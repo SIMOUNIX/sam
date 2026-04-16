@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 import discord
+import structlog
 from dotenv import load_dotenv
 
 from sam.config.loader import SamConfig
@@ -9,6 +10,7 @@ from sam.core.llm.client import MistralClient
 from sam.core.llm.tools import NAMES_TO_FUNCTIONS, TOOLS
 
 load_dotenv()
+logger = structlog.get_logger()
 
 
 class SamBot(discord.Client):
@@ -52,7 +54,7 @@ class SamBot(discord.Client):
         return self._histories[discord_id]
 
     async def on_ready(self):
-        print(f"SAM ready — logged in as {self.user}")
+        logger.info(f"SAM ready — logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
         if message.author == self.user:
@@ -64,6 +66,7 @@ class SamBot(discord.Client):
         discord_id = str(message.author.id)
 
         if discord_id not in self._known_members:
+            logger.warning(f"Unknown member: {discord_id}")
             await message.channel.send("Sorry, I don't recognise you.")
             return
 

@@ -2,10 +2,13 @@ import json
 import os
 from typing import Any, Callable, Optional
 
+import structlog
 from mistralai.client import Mistral
 from mistralai.client.models.chatcompletionrequest import (
     ChatCompletionRequestMessageTypedDict,
 )
+
+logger = structlog.get_logger()
 
 
 class MistralClient:
@@ -28,6 +31,7 @@ class MistralClient:
             messages.append(message.model_dump())  # type: ignore[arg-type]
 
             for tool_call in message.tool_calls:
+                logger.debug("tool_call", tool_call=tool_call)
                 function_name = tool_call.function.name
                 function_params = json.loads(tool_call.function.arguments)
                 function_result = names_to_functions[function_name](**function_params)  # type: ignore[index]

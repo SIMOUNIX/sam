@@ -7,20 +7,23 @@ from dotenv import load_dotenv
 
 from sam.config.loader import SamConfig
 from sam.core.llm.client import MistralClient
-from sam.core.llm.tools import NAMES_TO_FUNCTIONS, TOOLS
+from sam.core.llm.tools import TOOLS, ToolRegistry
 
 load_dotenv()
 logger = structlog.get_logger()
 
 
 class SamBot(discord.Client):
-    def __init__(self, config: SamConfig, llm_client: MistralClient):
+    def __init__(
+        self, config: SamConfig, llm_client: MistralClient, registry: ToolRegistry
+    ):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
 
         self.config = config
         self.llm_client = llm_client
+        self.registry = registry
         self.token = os.environ.get("SAM_DISCORD_BOT_TOKEN")
 
         self._known_members: dict[str, str] = {
@@ -82,7 +85,7 @@ class SamBot(discord.Client):
             response = self.llm_client.chat(
                 messages=history,
                 tools=TOOLS,
-                names_to_functions=NAMES_TO_FUNCTIONS,
+                names_to_functions=self.registry.names_to_functions,
             )
 
             history.append({"role": "assistant", "content": response})

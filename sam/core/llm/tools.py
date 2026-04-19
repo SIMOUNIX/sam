@@ -160,12 +160,12 @@ class ToolRegistry:
                     end_at=datetime.fromisoformat(end_at) if end_at else None,
                 )
             )
-            log.info("event saved", member=member_discord_id, title=title, start_at=start_at)
+            log.info(
+                "event saved", member=member_discord_id, title=title, start_at=start_at
+            )
         return "event saved"
 
-    def create_reminder(
-        self, member_discord_id: str, content: str, due_at: str
-    ) -> str:
+    def create_reminder(self, member_discord_id: str, content: str, due_at: str) -> str:
         with get_session() as s:
             s.add(
                 Reminder(
@@ -174,7 +174,12 @@ class ToolRegistry:
                     due_at=datetime.fromisoformat(due_at),
                 )
             )
-            log.info("reminder created", member=member_discord_id, content=content, due_at=due_at)
+            log.info(
+                "reminder created",
+                member=member_discord_id,
+                content=content,
+                due_at=due_at,
+            )
         return "reminder created"
 
     def recall_memories(self, member_discord_id: str, query: str) -> str:

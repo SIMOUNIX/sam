@@ -1,3 +1,5 @@
+from sam.core.llm.tools import ToolRegistry
+from sam.core.memory.vector import VectorMemory
 from dotenv import load_dotenv
 
 from sam.config.loader import load_config
@@ -14,7 +16,10 @@ def start():
     configure_session()
     config = load_config("config/members.toml")
     llm_client = get_llm_client()
-    bot = SamBot(config=config, llm_client=llm_client)
+
+    vector_memory = VectorMemory(path="~/.sam/vector.chroma")
+    registry = ToolRegistry(vector_memory=vector_memory)
+    bot = SamBot(config=config, llm_client=llm_client, registry=registry)
     bot.run_bot()
 
 

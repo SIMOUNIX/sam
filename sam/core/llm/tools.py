@@ -1,64 +1,12 @@
 from datetime import datetime
+from typing import Callable
+
+import structlog
 
 from sam.core.memory.structured import Episode, Event, Memory, Reminder, get_session
+from sam.core.memory.vector import VectorMemory
 
-
-def save_memory(member_discord_id: str, content: str) -> str:
-    with get_session() as s:
-        s.add(Memory(member_discord_id=member_discord_id, content=content))
-    return "memory saved"
-
-
-def save_episode(
-    member_discord_id: str, content: str, context: str | None = None
-) -> str:
-    with get_session() as s:
-        s.add(
-            Episode(
-                member_discord_id=member_discord_id, content=content, context=context
-            )
-        )
-    return "episode saved"
-
-
-def save_event(
-    member_discord_id: str,
-    title: str,
-    start_at: str,
-    description: str,
-    end_at: str | None = None,
-) -> str:
-    with get_session() as s:
-        s.add(
-            Event(
-                member_discord_id=member_discord_id,
-                title=title,
-                description=description,
-                start_at=datetime.fromisoformat(start_at),
-                end_at=datetime.fromisoformat(end_at) if end_at else None,
-            )
-        )
-    return "event saved"
-
-
-def create_reminder(member_discord_id: str, content: str, due_at: str) -> str:
-    with get_session() as s:
-        s.add(
-            Reminder(
-                member_discord_id=member_discord_id,
-                content=content,
-                due_at=datetime.fromisoformat(due_at),
-            )
-        )
-    return "reminder created"
-
-
-NAMES_TO_FUNCTIONS = {
-    "save_memory": save_memory,
-    "save_episode": save_episode,
-    "save_event": save_event,
-    "create_reminder": create_reminder,
-}
+log = structlog.get_logger()
 
 TOOLS = [
     {
@@ -147,4 +95,101 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_memories",
+            "description": "Search for memories and episodes relevant to a query about a member.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_discord_id": {"type": "string"},
+                    "query": {
+                        "type": "string",
+                        "description": "What to look for.",
+                    },
+                },
+                "required": ["member_discord_id", "query"],
+            },
+        },
+    },
 ]
+
+
+class ToolRegistry:
+    def __init__(self, vector_memory: VectorMemory):
+        self.vector_memory = vector_memory
+
+    def save_memory(self, member_discord_id: str, content: str) -> str:
+        with get_session() as s:
+            mem = Memory(member_discord_id=member_discord_id, content=content)
+            s.add(mem)
+            s.flush()
+            log.info("memory saved", member=member_discord_id, content=content)
+            self.vector_memory.store(mem.id, member_discord_id, "memory", content)
+        return "memory saved"
+
+    def save_episode(
+        self, member_discord_id: str, content: str, context: str | None = None
+    ) -> str:
+        with get_session() as s:
+            ep = Episode(
+                member_discord_id=member_discord_id, content=content, context=context
+            )
+            s.add(ep)
+            s.flush()
+            log.info("episode saved", member=member_discord_id, content=content)
+            self.vector_memory.store(ep.id, member_discord_id, "episode", content)
+        return "episode saved"
+
+    def save_event(
+        self,
+        member_discord_id: str,
+        title: str,
+        start_at: str,
+        description: str,
+        end_at: str | None = None,
+    ) -> str:
+        with get_session() as s:
+            s.add(
+                Event(
+                    member_discord_id=member_discord_id,
+                    title=title,
+                    description=description,
+                    start_at=datetime.fromisoformat(start_at),
+                    end_at=datetime.fromisoformat(end_at) if end_at else None,
+                )
+            )
+            log.info("event saved", member=member_discord_id, title=title, start_at=start_at)
+        return "event saved"
+
+    def create_reminder(
+        self, member_discord_id: str, content: str, due_at: str
+    ) -> str:
+        with get_session() as s:
+            s.add(
+                Reminder(
+                    member_discord_id=member_discord_id,
+                    content=content,
+                    due_at=datetime.fromisoformat(due_at),
+                )
+            )
+            log.info("reminder created", member=member_discord_id, content=content, due_at=due_at)
+        return "reminder created"
+
+    def recall_memories(self, member_discord_id: str, query: str) -> str:
+        log.info("recalling memories", member=member_discord_id, query=query)
+        results = self.vector_memory.search(member_discord_id, query)
+        if not results:
+            return "no relevant memories found"
+        return "\n".join(f"- {r}" for r in results)
+
+    @property
+    def names_to_functions(self) -> dict[str, Callable[..., str]]:
+        return {
+            "save_memory": self.save_memory,
+            "save_episode": self.save_episode,
+            "save_event": self.save_event,
+            "create_reminder": self.create_reminder,
+            "recall_memories": self.recall_memories,
+        }

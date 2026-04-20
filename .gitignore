@@ -25,3 +25,8 @@ htmlcov/
 .vscode/
 .idea/
 *.swp
+
+# === Frontend build ===
+node_modules/
+sam/interfaces/dashboard/static/dashboard.js
+sam/interfaces/dashboard/static/dashboard.js.map

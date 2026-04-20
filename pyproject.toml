@@ -7,6 +7,8 @@ dependencies = [
     "apscheduler>=3.11.2",
     "chromadb>=1.5.7",
     "discord-py>=2.7.1",
+    "fastapi>=0.136.0",
+    "jinja2>=3.1.6",
     "langgraph>=1.1.6",
     "mistralai>=2.3.2",
     "ollama>=0.6.1",
@@ -15,11 +17,13 @@ dependencies = [
     "sqlalchemy>=2.0.49",
     "structlog>=25.5.0",
     "textual>=8.2.3",
+    "uvicorn[standard]>=0.44.0",
 ]
 
 [project.scripts]
 sam = "sam.main:start"
 sam-dump = "sam.dump:dump"
+sam-dashboard = "sam.interfaces.dashboard.app:start"
 
 [tool.setuptools.packages.find]
 include = ["sam*"]

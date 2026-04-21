@@ -299,7 +299,7 @@ def start() -> None:
         "sam.interfaces.dashboard.app:app",
         host="127.0.0.1",
         port=8765,
-        reload=False,
+        reload=True,
         log_level="info",
     )
 

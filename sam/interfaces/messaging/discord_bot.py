@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sam.config.loader import SamConfig
 from sam.core.llm.client import MistralClient
 from sam.core.llm.tools import TOOLS, ToolRegistry
+from sam.core.memory.structured import Run, get_session
 
 load_dotenv()
 logger = structlog.get_logger()
@@ -82,15 +83,37 @@ class SamBot(discord.Client):
                 }
             )
 
-            response = self.llm_client.chat(
-                messages=history,
-                tools=TOOLS,
-                names_to_functions=self.registry.names_to_functions,
-            )
+            status = "ok"
+            try:
+                result = self.llm_client.chat(
+                    messages=history,
+                    tools=TOOLS,
+                    names_to_functions=self.registry.names_to_functions,
+                )
+            except Exception as exc:
+                status = "error"
+                logger.error("llm_chat_failed", error=str(exc))
+                await message.channel.send("Sorry, something went wrong.")
+                return
 
-            history.append({"role": "assistant", "content": response})
+            history.append({"role": "assistant", "content": result.content})
 
-        await message.channel.send(response)
+            try:
+                with get_session() as s:
+                    s.add(Run(
+                        member_discord_id=discord_id,
+                        model=result.model,
+                        input_tokens=result.input_tokens,
+                        output_tokens=result.output_tokens,
+                        tool_calls=result.tool_calls_count,
+                        duration_ms=result.duration_ms,
+                        cost_usd=result.cost_usd,
+                        status=status,
+                    ))
+            except Exception as exc:
+                logger.warning("run_tracking_failed", error=str(exc))
+
+        await message.channel.send(result.content)
 
     def run_bot(self):
         self.run(self.token)

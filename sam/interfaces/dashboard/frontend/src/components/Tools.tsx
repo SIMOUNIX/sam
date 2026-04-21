@@ -6,45 +6,38 @@ export function Tools({ tools }: { tools: Tool[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground font-semibold flex items-center gap-2">
+        <CardTitle style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-foreground)", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
           Tools
-          <Badge variant="secondary" className="font-mono">
-            {tools.length}
-          </Badge>
+          <Badge variant="secondary">{tools.length}</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {tools.map((tool) => {
-          const requiredCount = tool.params.filter((p) => p.required).length;
+      <CardContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {tools.map(tool => {
+          const requiredCount = tool.params.filter(p => p.required).length;
           return (
-            <div
-              key={tool.name}
-              className="rounded-lg border border-border bg-card/50 p-4"
-            >
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-mono text-sm font-medium text-primary">
+            <div key={tool.name} style={{
+              borderRadius: 8, border: "1px solid var(--border)",
+              background: "var(--muted)", padding: 16,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 500, color: "var(--primary)" }}>
                   {tool.name}
                 </span>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-foreground)", fontFamily: "monospace" }}>
                   {requiredCount} required
                 </span>
               </div>
-              <p className="text-sm mb-3">{tool.description}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {tool.params.map((p) => (
-                  <span
-                    key={p.name}
-                    title={p.description}
-                    className={`font-mono text-[11px] px-2 py-0.5 rounded border ${
-                      p.required
-                        ? "border-primary/60 text-foreground"
-                        : "border-border text-muted-foreground"
-                    } bg-background`}
-                  >
-                    {p.name}
-                    <span className="text-muted-foreground/60 ml-1">
-                      :{p.type}
-                    </span>
+              <p style={{ fontSize: 13, color: "var(--foreground)", marginBottom: 12 }}>{tool.description}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {tool.params.map(p => (
+                  <span key={p.name} title={p.description} style={{
+                    fontFamily: "monospace", fontSize: 11,
+                    padding: "2px 8px", borderRadius: 4,
+                    border: `1px solid ${p.required ? "hsl(221,83%,70%)" : "var(--border)"}`,
+                    color: p.required ? "var(--primary)" : "var(--muted-foreground)",
+                    background: p.required ? "var(--primary-bg)" : "var(--card)",
+                  }}>
+                    {p.name}<span style={{ opacity: 0.5 }}>:{p.type}</span>
                   </span>
                 ))}
               </div>

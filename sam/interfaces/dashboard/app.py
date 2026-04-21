@@ -14,12 +14,14 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from sam.config.loader import load_config
+from sam.core.llm.client import estimate_cost
 from sam.core.llm.tools import TOOLS
 from sam.core.memory.structured import (
     Episode,
     Event,
     Memory,
     Reminder,
+    Run,
     configure_session,
     get_session,
 )
@@ -261,6 +263,99 @@ async def logs(tail: int = 80) -> JSONResponse:
             parsed.append({"level": "info", "msg": ln, "timestamp": None})
 
     return JSONResponse({"lines": parsed, "path": str(LOG_PATH), "exists": True})
+
+
+@app.get("/api/stats")
+async def stats() -> JSONResponse:
+    from datetime import timezone
+    from sqlalchemy import func
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    with get_session() as s:
+        total_runs = s.query(Run).count()
+        total_input = s.query(func.sum(Run.input_tokens)).scalar() or 0
+        total_output = s.query(func.sum(Run.output_tokens)).scalar() or 0
+        total_tools = s.query(func.sum(Run.tool_calls)).scalar() or 0
+        total_cost = s.query(func.sum(Run.cost_usd)).scalar() or 0.0
+        month_cost = (
+            s.query(func.sum(Run.cost_usd))
+            .filter(Run.created_at >= month_start)
+            .scalar()
+            or 0.0
+        )
+
+    return JSONResponse(
+        {
+            "total_runs": total_runs,
+            "total_input_tokens": int(total_input),
+            "total_output_tokens": int(total_output),
+            "total_tool_calls": int(total_tools),
+            "total_cost_usd": round(float(total_cost), 6),
+            "month_cost_usd": round(float(month_cost), 6),
+            "avg_cost_per_run": round(float(total_cost) / total_runs, 6) if total_runs else 0.0,
+        }
+    )
+
+
+@app.get("/api/stats/daily")
+async def stats_daily(days: int = 7) -> JSONResponse:
+    from datetime import timedelta, timezone
+    from sqlalchemy import func
+
+    days = max(1, min(days, 90))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    result = []
+    with get_session() as s:
+        for i in range(days - 1, -1, -1):
+            day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start.replace(hour=23, minute=59, second=59)
+            label = day_start.strftime("%a")
+
+            runs = s.query(Run).filter(Run.created_at >= day_start, Run.created_at <= day_end)
+            count = runs.count()
+            inp = runs.with_entities(func.sum(Run.input_tokens)).scalar() or 0
+            out = runs.with_entities(func.sum(Run.output_tokens)).scalar() or 0
+            cost = runs.with_entities(func.sum(Run.cost_usd)).scalar() or 0.0
+
+            result.append({
+                "date": day_start.strftime("%Y-%m-%d"),
+                "label": label,
+                "runs": count,
+                "input_tokens": int(inp),
+                "output_tokens": int(out),
+                "tokens": int(inp) + int(out),
+                "cost_usd": round(float(cost), 6),
+            })
+
+    return JSONResponse(result)
+
+
+@app.get("/api/runs")
+async def runs(limit: int = 20) -> JSONResponse:
+    limit = max(1, min(limit, 100))
+    lookup = _member_lookup()
+
+    with get_session() as s:
+        recent = s.query(Run).order_by(Run.created_at.desc()).limit(limit).all()
+
+    return JSONResponse([
+        {
+            "id": r.id,
+            "member": _member_name(lookup, r.member_discord_id),
+            "model": r.model,
+            "input_tokens": r.input_tokens,
+            "output_tokens": r.output_tokens,
+            "tool_calls": r.tool_calls,
+            "duration_ms": r.duration_ms,
+            "cost_usd": round(r.cost_usd, 6),
+            "status": r.status,
+            "created_at": _iso(r.created_at),
+        }
+        for r in recent
+    ])
 
 
 # --- Static React build ---

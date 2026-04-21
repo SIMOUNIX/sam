@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import Boolean, DateTime, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -89,6 +89,23 @@ class Reminder(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
+
+
+class Run(Base):
+    """One LLM call triggered by a Discord message."""
+
+    __tablename__ = "runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="ok", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
 def _default_db_path() -> Path:

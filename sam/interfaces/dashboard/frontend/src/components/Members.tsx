@@ -1,24 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Member } from "@/types";
 
 export function Members({ members }: { members: Member[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground font-semibold flex items-center gap-2">
+        <CardTitle style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-foreground)", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
           Known members
-          <Badge variant="secondary" className="font-mono">
-            {members.length}
-          </Badge>
+          <Badge variant="secondary">{members.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -33,21 +24,16 @@ export function Members({ members }: { members: Member[] }) {
           <TableBody>
             {members.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="text-center text-muted-foreground italic"
-                >
+                <TableCell colSpan={3} style={{ textAlign: "center", color: "var(--muted-foreground)", fontStyle: "italic" }}>
                   no members configured
                 </TableCell>
               </TableRow>
             ) : (
-              members.map((m) => (
+              members.map(m => (
                 <TableRow key={m.discord_id}>
-                  <TableCell className="font-mono">{m.family}</TableCell>
-                  <TableCell className="font-mono">{m.firstname}</TableCell>
-                  <TableCell className="font-mono text-muted-foreground text-xs">
-                    {m.discord_id}
-                  </TableCell>
+                  <TableCell style={{ fontFamily: "monospace" }}>{m.family}</TableCell>
+                  <TableCell>{m.firstname}</TableCell>
+                  <TableCell style={{ fontFamily: "monospace", fontSize: 12, color: "var(--muted-foreground)" }}>{m.discord_id}</TableCell>
                 </TableRow>
               ))
             )}

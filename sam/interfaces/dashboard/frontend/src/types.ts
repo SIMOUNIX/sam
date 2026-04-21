@@ -79,6 +79,39 @@ export interface SamState {
   recent: Recent;
 }
 
+export interface RunStats {
+  total_runs: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tool_calls: number;
+  total_cost_usd: number;
+  month_cost_usd: number;
+  avg_cost_per_run: number;
+}
+
+export interface DailyStats {
+  date: string;
+  label: string;
+  runs: number;
+  input_tokens: number;
+  output_tokens: number;
+  tokens: number;
+  cost_usd: number;
+}
+
+export interface RunRecord {
+  id: number;
+  member: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  tool_calls: number;
+  duration_ms: number;
+  cost_usd: number;
+  status: string;
+  created_at: string | null;
+}
+
 export interface LogLine {
   level?: string;
   msg?: string;

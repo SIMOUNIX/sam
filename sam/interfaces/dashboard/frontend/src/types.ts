@@ -27,6 +27,19 @@ export interface Member {
   discord_id: string;
 }
 
+export interface FamilyRecord {
+  id: number;
+  name: string;
+}
+
+export interface MemberRecord {
+  id: number;
+  firstname: string;
+  family_id: number;
+  family: string;
+  channels: Record<string, string>;
+}
+
 export interface Counts {
   memories: number;
   episodes: number;

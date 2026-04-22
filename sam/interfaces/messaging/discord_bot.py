@@ -5,55 +5,54 @@ import discord
 import structlog
 from dotenv import load_dotenv
 
-from sam.config.loader import SamConfig
 from sam.core.llm.client import MistralClient
 from sam.core.llm.tools import TOOLS, ToolRegistry
-from sam.core.memory.structured import Run, get_session
+from sam.core.memory.structured import (
+    Run,
+    get_member_by_channel,
+    get_family_members,
+    get_session,
+)
 
 load_dotenv()
 logger = structlog.get_logger()
 
 
 class SamBot(discord.Client):
-    def __init__(
-        self, config: SamConfig, llm_client: MistralClient, registry: ToolRegistry
-    ):
+    def __init__(self, llm_client: MistralClient, registry: ToolRegistry):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
 
-        self.config = config
         self.llm_client = llm_client
         self.registry = registry
         self.token = os.environ.get("SAM_DISCORD_BOT_TOKEN")
-
-        self._known_members: dict[str, str] = {
-            member.discord_id: member.firstname
-            for family in config.families
-            for member in family.members
-        }
         self._histories: dict[str, list] = {}
 
-    def _get_history(self, discord_id: str) -> list:
+    def _build_system_prompt(self, member_info: dict) -> str:
+        family_members = get_family_members(member_info["family_id"])
+        members_desc = ", ".join(
+            f"{m['firstname']} ({', '.join(f'{p}:{v}' for p, v in m['channels'].items())})"
+            for m in family_members
+        )
+        return (
+            f"You are SAM, a personal assistant for families.\n"
+            f"Today is {datetime.now().strftime('%A, %B %d %Y')}.\n"
+            f"You are speaking with {member_info['firstname']} from the {member_info['family_name']} family.\n"
+            f"Family members: {members_desc}\n\n"
+            f"Use these tools proactively:\n"
+            f"- save_memory: when you learn a fact, preference, or relationship about a member\n"
+            f"- save_episode: when something specific happens or is mentioned\n"
+            f"- save_event: when a member has a calendar event\n"
+            f"- create_reminder: when a member needs to be reminded of something\n"
+            f"Always use the member's discord ID when calling tools.\n"
+            f"After calling a tool, acknowledge naturally and briefly."
+        )
+
+    def _get_history(self, discord_id: str, member_info: dict) -> list:
         if discord_id not in self._histories:
-            firstname = self._known_members[discord_id]
             self._histories[discord_id] = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are SAM, a personal assistant for families.\n"
-                        f"Today is {datetime.now().strftime('%A, %B %d %Y')}.\n"
-                        f"You are speaking with {firstname}.\n"
-                        f"Here is the family configuration: {self.config}\n\n"
-                        f"Use these tools proactively:\n"
-                        f"- save_memory: when you learn a fact, preference, or relationship about a member\n"
-                        f"- save_episode: when something specific happens or is mentioned\n"
-                        f"- save_event: when a member has a calendar event\n"
-                        f"- create_reminder: when a member needs to be reminded of something\n"
-                        f"Always use the member's discord_id from the config above.\n"
-                        f"After calling a tool, acknowledge naturally and briefly."
-                    ),
-                }
+                {"role": "system", "content": self._build_system_prompt(member_info)}
             ]
         return self._histories[discord_id]
 
@@ -68,14 +67,15 @@ class SamBot(discord.Client):
             return
 
         discord_id = str(message.author.id)
+        member_info = get_member_by_channel("discord", discord_id)
 
-        if discord_id not in self._known_members:
-            logger.warning(f"Unknown member: {discord_id}")
+        if not member_info:
+            logger.warning("unknown_member", discord_id=discord_id)
             await message.channel.send("Sorry, I don't recognise you.")
             return
 
         async with message.channel.typing():
-            history = self._get_history(discord_id)
+            history = self._get_history(discord_id, member_info)
             history.append(
                 {
                     "role": "user",
@@ -100,16 +100,18 @@ class SamBot(discord.Client):
 
             try:
                 with get_session() as s:
-                    s.add(Run(
-                        member_discord_id=discord_id,
-                        model=result.model,
-                        input_tokens=result.input_tokens,
-                        output_tokens=result.output_tokens,
-                        tool_calls=result.tool_calls_count,
-                        duration_ms=result.duration_ms,
-                        cost_usd=result.cost_usd,
-                        status=status,
-                    ))
+                    s.add(
+                        Run(
+                            member_discord_id=discord_id,
+                            model=result.model,
+                            input_tokens=result.input_tokens,
+                            output_tokens=result.output_tokens,
+                            tool_calls=result.tool_calls_count,
+                            duration_ms=result.duration_ms,
+                            cost_usd=result.cost_usd,
+                            status=status,
+                        )
+                    )
             except Exception as exc:
                 logger.warning("run_tracking_failed", error=str(exc))
 

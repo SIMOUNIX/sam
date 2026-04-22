@@ -14,11 +14,11 @@ logger = structlog.get_logger()
 
 # Pricing per 1M tokens (USD) — update as Mistral changes rates
 _PRICING: dict[str, dict[str, float]] = {
-    "mistral-small-2506":  {"input": 0.20, "output": 0.60},
+    "mistral-small-2506": {"input": 0.20, "output": 0.60},
     "mistral-small-latest": {"input": 0.20, "output": 0.60},
     "mistral-medium-latest": {"input": 0.40, "output": 1.20},
     "mistral-large-latest": {"input": 2.00, "output": 6.00},
-    "mistral-large-2411":  {"input": 2.00, "output": 6.00},
+    "mistral-large-2411": {"input": 2.00, "output": 6.00},
 }
 _DEFAULT_PRICING = {"input": 0.40, "output": 1.20}
 

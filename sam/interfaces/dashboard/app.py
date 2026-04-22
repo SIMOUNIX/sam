@@ -8,21 +8,25 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from sam.config.loader import load_config
-from sam.core.llm.client import estimate_cost
 from sam.core.llm.tools import TOOLS
 from sam.core.memory.structured import (
+    Channel,
     Episode,
     Event,
+    Family,
+    Member,
     Memory,
     Reminder,
     Run,
+    build_member_lookup,
     configure_session,
+    get_all_members_flat,
     get_session,
 )
 from sam.core.memory.vector import VectorMemory
@@ -35,27 +39,12 @@ VECTOR_PATH = "~/.sam/vector.chroma"
 LOG_PATH = Path(os.environ.get("SAM_DATA_DIR", "~/.sam")).expanduser() / "sam.log"
 SQLITE_PATH = Path(os.environ.get("SAM_DATA_DIR", "~/.sam")).expanduser() / "sam.db"
 
-
-def _find_members_path() -> Path:
-    cwd_path = Path("config/members.toml")
-    if cwd_path.exists():
-        return cwd_path
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / "config" / "members.toml"
-        if candidate.exists():
-            return candidate
-    return cwd_path
-
-
-MEMBERS_PATH = _find_members_path()
-
 app = FastAPI(title="SAM Dashboard")
 
-# CORS for Vite dev server on a different port.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -87,39 +76,13 @@ def _format_tools() -> list[dict[str, Any]]:
         ]
         out.append(
             asdict(
-                ToolSpec(
-                    name=fn["name"],
-                    description=fn["description"],
-                    params=params,
-                )
+                ToolSpec(name=fn["name"], description=fn["description"], params=params)
             )
         )
     return out
 
 
-def _member_lookup() -> dict[str, dict[str, str]]:
-    if not MEMBERS_PATH.exists():
-        return {}
-    config = load_config(MEMBERS_PATH)
-    return {
-        m.discord_id: {"firstname": m.firstname, "family": f.name}
-        for f in config.families
-        for m in f.members
-    }
-
-
-def _members_flat() -> list[dict[str, str]]:
-    if not MEMBERS_PATH.exists():
-        return []
-    config = load_config(MEMBERS_PATH)
-    return [
-        {"family": f.name, "firstname": m.firstname, "discord_id": m.discord_id}
-        for f in config.families
-        for m in f.members
-    ]
-
-
-def _member_name(lookup: dict[str, dict[str, str]], discord_id: str) -> str:
+def _member_name(lookup: dict[str, dict], discord_id: str) -> str:
     entry = lookup.get(discord_id)
     return entry["firstname"] if entry else discord_id
 
@@ -143,9 +106,15 @@ async def _startup() -> None:
     configure_session()
 
 
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+
 @app.get("/api/state")
 async def state() -> JSONResponse:
-    lookup = _member_lookup()
+    lookup = build_member_lookup()
+    members_flat = get_all_members_flat()
 
     with get_session() as s:
         memory_count = s.query(Memory).count()
@@ -169,46 +138,6 @@ async def state() -> JSONResponse:
             .all()
         )
 
-        memories_payload = [
-            {
-                "id": m.id,
-                "member": _member_name(lookup, m.member_discord_id),
-                "content": m.content,
-                "at": _iso(m.created_at),
-            }
-            for m in recent_memories
-        ]
-        episodes_payload = [
-            {
-                "id": e.id,
-                "member": _member_name(lookup, e.member_discord_id),
-                "content": e.content,
-                "context": e.context,
-                "at": _iso(e.created_at),
-            }
-            for e in recent_episodes
-        ]
-        events_payload = [
-            {
-                "id": v.id,
-                "member": _member_name(lookup, v.member_discord_id),
-                "title": v.title,
-                "description": v.description,
-                "start_at": _iso(v.start_at),
-                "end_at": _iso(v.end_at),
-            }
-            for v in upcoming_events
-        ]
-        reminders_payload = [
-            {
-                "id": r.id,
-                "member": _member_name(lookup, r.member_discord_id),
-                "content": r.content,
-                "due_at": _iso(r.due_at),
-            }
-            for r in pending_reminders
-        ]
-
     payload = {
         "generated_at": datetime.utcnow().isoformat(),
         "models": {
@@ -221,7 +150,14 @@ async def state() -> JSONResponse:
             "discord_token_configured": bool(os.environ.get("SAM_DISCORD_BOT_TOKEN")),
         },
         "tools": _format_tools(),
-        "members": _members_flat(),
+        "members": [
+            {
+                "family": m["family"],
+                "firstname": m["firstname"],
+                "discord_id": m["channels"].get("discord", ""),
+            }
+            for m in members_flat
+        ],
         "counts": {
             "memories": memory_count,
             "episodes": episode_count,
@@ -231,13 +167,135 @@ async def state() -> JSONResponse:
             "vector_documents": _vector_count(),
         },
         "recent": {
-            "memories": memories_payload,
-            "episodes": episodes_payload,
-            "events": events_payload,
-            "reminders": reminders_payload,
+            "memories": [
+                {
+                    "id": m.id,
+                    "member": _member_name(lookup, m.member_discord_id),
+                    "content": m.content,
+                    "at": _iso(m.created_at),
+                }
+                for m in recent_memories
+            ],
+            "episodes": [
+                {
+                    "id": e.id,
+                    "member": _member_name(lookup, e.member_discord_id),
+                    "content": e.content,
+                    "context": e.context,
+                    "at": _iso(e.created_at),
+                }
+                for e in recent_episodes
+            ],
+            "events": [
+                {
+                    "id": v.id,
+                    "member": _member_name(lookup, v.member_discord_id),
+                    "title": v.title,
+                    "description": v.description,
+                    "start_at": _iso(v.start_at),
+                    "end_at": _iso(v.end_at),
+                }
+                for v in upcoming_events
+            ],
+            "reminders": [
+                {
+                    "id": r.id,
+                    "member": _member_name(lookup, r.member_discord_id),
+                    "content": r.content,
+                    "due_at": _iso(r.due_at),
+                }
+                for r in pending_reminders
+            ],
         },
     }
     return JSONResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Members & Families CRUD
+# ---------------------------------------------------------------------------
+
+
+class FamilyCreate(BaseModel):
+    name: str
+
+
+class MemberCreate(BaseModel):
+    family_id: int
+    firstname: str
+    channels: dict[str, str] = {}
+
+
+@app.get("/api/families")
+async def list_families() -> JSONResponse:
+    with get_session() as s:
+        families = s.query(Family).order_by(Family.name).all()
+        return JSONResponse([{"id": f.id, "name": f.name} for f in families])
+
+
+@app.post("/api/families")
+async def create_family(body: FamilyCreate) -> JSONResponse:
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    with get_session() as s:
+        existing = s.query(Family).filter_by(name=name).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="family already exists")
+        family = Family(name=name)
+        s.add(family)
+        s.flush()
+        return JSONResponse({"id": family.id, "name": family.name}, status_code=201)
+
+
+@app.get("/api/members")
+async def list_members() -> JSONResponse:
+    return JSONResponse(get_all_members_flat())
+
+
+@app.post("/api/members")
+async def create_member(body: MemberCreate) -> JSONResponse:
+    firstname = body.firstname.strip()
+    if not firstname:
+        raise HTTPException(status_code=400, detail="firstname is required")
+    if not body.channels:
+        raise HTTPException(status_code=400, detail="at least one channel is required")
+
+    with get_session() as s:
+        family = s.query(Family).filter_by(id=body.family_id).first()
+        if not family:
+            raise HTTPException(status_code=404, detail="family not found")
+        member = Member(family_id=body.family_id, firstname=firstname)
+        s.add(member)
+        s.flush()
+        for platform, platform_id in body.channels.items():
+            if platform_id.strip():
+                s.add(
+                    Channel(
+                        member_id=member.id,
+                        platform=platform,
+                        platform_id=platform_id.strip(),
+                    )
+                )
+        return JSONResponse(
+            {"id": member.id, "firstname": member.firstname}, status_code=201
+        )
+
+
+@app.delete("/api/members/{member_id}")
+async def delete_member(member_id: int) -> JSONResponse:
+    with get_session() as s:
+        member = s.query(Member).filter_by(id=member_id).first()
+        if not member:
+            raise HTTPException(status_code=404, detail="member not found")
+        s.query(Channel).filter_by(member_id=member_id).delete()
+        s.delete(member)
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/logs")
@@ -254,7 +312,6 @@ async def logs(tail: int = 80) -> JSONResponse:
         raw = f.read().decode("utf-8", errors="replace")
 
     lines = [ln for ln in raw.splitlines() if ln.strip()][-tail:]
-
     parsed: list[dict[str, Any]] = []
     for ln in lines:
         try:
@@ -263,6 +320,11 @@ async def logs(tail: int = 80) -> JSONResponse:
             parsed.append({"level": "info", "msg": ln, "timestamp": None})
 
     return JSONResponse({"lines": parsed, "path": str(LOG_PATH), "exists": True})
+
+
+# ---------------------------------------------------------------------------
+# Stats & Runs
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/stats")
@@ -294,7 +356,9 @@ async def stats() -> JSONResponse:
             "total_tool_calls": int(total_tools),
             "total_cost_usd": round(float(total_cost), 6),
             "month_cost_usd": round(float(month_cost), 6),
-            "avg_cost_per_run": round(float(total_cost) / total_runs, 6) if total_runs else 0.0,
+            "avg_cost_per_run": round(float(total_cost) / total_runs, 6)
+            if total_runs
+            else 0.0,
         }
     )
 
@@ -310,25 +374,29 @@ async def stats_daily(days: int = 7) -> JSONResponse:
     result = []
     with get_session() as s:
         for i in range(days - 1, -1, -1):
-            day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+            day_start = (now - timedelta(days=i)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             day_end = day_start.replace(hour=23, minute=59, second=59)
             label = day_start.strftime("%a")
-
-            runs = s.query(Run).filter(Run.created_at >= day_start, Run.created_at <= day_end)
-            count = runs.count()
-            inp = runs.with_entities(func.sum(Run.input_tokens)).scalar() or 0
-            out = runs.with_entities(func.sum(Run.output_tokens)).scalar() or 0
-            cost = runs.with_entities(func.sum(Run.cost_usd)).scalar() or 0.0
-
-            result.append({
-                "date": day_start.strftime("%Y-%m-%d"),
-                "label": label,
-                "runs": count,
-                "input_tokens": int(inp),
-                "output_tokens": int(out),
-                "tokens": int(inp) + int(out),
-                "cost_usd": round(float(cost), 6),
-            })
+            runs_q = s.query(Run).filter(
+                Run.created_at >= day_start, Run.created_at <= day_end
+            )
+            count = runs_q.count()
+            inp = runs_q.with_entities(func.sum(Run.input_tokens)).scalar() or 0
+            out = runs_q.with_entities(func.sum(Run.output_tokens)).scalar() or 0
+            cost = runs_q.with_entities(func.sum(Run.cost_usd)).scalar() or 0.0
+            result.append(
+                {
+                    "date": day_start.strftime("%Y-%m-%d"),
+                    "label": label,
+                    "runs": count,
+                    "input_tokens": int(inp),
+                    "output_tokens": int(out),
+                    "tokens": int(inp) + int(out),
+                    "cost_usd": round(float(cost), 6),
+                }
+            )
 
     return JSONResponse(result)
 
@@ -336,29 +404,34 @@ async def stats_daily(days: int = 7) -> JSONResponse:
 @app.get("/api/runs")
 async def runs(limit: int = 20) -> JSONResponse:
     limit = max(1, min(limit, 100))
-    lookup = _member_lookup()
+    lookup = build_member_lookup()
 
     with get_session() as s:
         recent = s.query(Run).order_by(Run.created_at.desc()).limit(limit).all()
 
-    return JSONResponse([
-        {
-            "id": r.id,
-            "member": _member_name(lookup, r.member_discord_id),
-            "model": r.model,
-            "input_tokens": r.input_tokens,
-            "output_tokens": r.output_tokens,
-            "tool_calls": r.tool_calls,
-            "duration_ms": r.duration_ms,
-            "cost_usd": round(r.cost_usd, 6),
-            "status": r.status,
-            "created_at": _iso(r.created_at),
-        }
-        for r in recent
-    ])
+    return JSONResponse(
+        [
+            {
+                "id": r.id,
+                "member": _member_name(lookup, r.member_discord_id),
+                "model": r.model,
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "tool_calls": r.tool_calls,
+                "duration_ms": r.duration_ms,
+                "cost_usd": round(r.cost_usd, 6),
+                "status": r.status,
+                "created_at": _iso(r.created_at),
+            }
+            for r in recent
+        ]
+    )
 
 
-# --- Static React build ---
+# ---------------------------------------------------------------------------
+# Static React build
+# ---------------------------------------------------------------------------
+
 _DEV_HINT = (
     "The dashboard UI hasn't been built yet.\n\n"
     "For development, run the Vite dev server:\n"
@@ -370,11 +443,7 @@ _DEV_HINT = (
 )
 
 if (DIST_DIR / "assets").is_dir():
-    app.mount(
-        "/assets",
-        StaticFiles(directory=DIST_DIR / "assets"),
-        name="assets",
-    )
+    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
 
 @app.get("/{full_path:path}")

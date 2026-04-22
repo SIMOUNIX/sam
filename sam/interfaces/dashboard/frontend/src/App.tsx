@@ -254,7 +254,7 @@ export default function App() {
       case "cost":     return <Cost runStats={runStats.data} daily={daily.data ?? []} recentRuns={runs.data ?? []} />;
       case "activity": return state.data ? <Activity recent={state.data.recent} /> : <LoadingMsg />;
       case "tools":    return state.data ? <Tools tools={state.data.tools} /> : <LoadingMsg />;
-      case "members":  return state.data ? <Members members={state.data.members} /> : <LoadingMsg />;
+      case "members":  return <Members />;
       case "logs":     return <Logs data={logs.data} />;
       case "setup":    return <Setup onComplete={handleSetupComplete} />;
     }

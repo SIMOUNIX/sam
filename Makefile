@@ -3,7 +3,6 @@
 dev:
 	@trap 'kill 0' SIGINT; \
 	uv run sam & \
-	uv run sam-dashboard & \
 	cd sam/interfaces/dashboard/frontend && bun run dev & \
 	wait
 

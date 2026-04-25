@@ -6,11 +6,12 @@ import structlog
 from dotenv import load_dotenv
 
 from sam.core.llm.client import MistralClient
-from sam.core.llm.tools import TOOLS, ToolRegistry
+from sam.core.llm.tools import REMINDER_TOOLS, TOOLS, ToolRegistry
 from sam.core.memory.structured import (
     Run,
-    get_member_by_channel,
     get_family_members,
+    get_member_by_channel,
+    get_pending_reminders,
     get_session,
 )
 
@@ -76,6 +77,23 @@ class SamBot(discord.Client):
 
         async with message.channel.typing():
             history = self._get_history(discord_id, member_info)
+
+            pending = get_pending_reminders(discord_id)
+            if pending:
+                reminders_desc = "\n".join(
+                    f"- reminder_id={r.id}: {r.content}" for r in pending
+                )
+                history.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            f"PENDING REMINDERS awaiting acknowledgement:\n{reminders_desc}\n\n"
+                            "Based on the member's next message, call complete_reminder, snooze_reminder, "
+                            "or defer_reminder for each pending reminder. If the message is unrelated, call defer_reminder."
+                        ),
+                    }
+                )
+
             history.append(
                 {
                     "role": "user",
@@ -83,11 +101,13 @@ class SamBot(discord.Client):
                 }
             )
 
+            tools = TOOLS + REMINDER_TOOLS if pending else TOOLS
+
             status = "ok"
             try:
                 result = self.llm_client.chat(
                     messages=history,
-                    tools=TOOLS,
+                    tools=tools,
                     names_to_functions=self.registry.names_to_functions,
                 )
             except Exception as exc:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
 import structlog
@@ -115,6 +115,51 @@ TOOLS = [
     },
 ]
 
+REMINDER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_reminder",
+            "description": "Mark a pending reminder as done because the member confirmed they completed the task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reminder_id": {"type": "integer"},
+                },
+                "required": ["reminder_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "snooze_reminder",
+            "description": "Snooze a pending reminder by 1 hour because the member asked to be reminded later.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reminder_id": {"type": "integer"},
+                },
+                "required": ["reminder_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "defer_reminder",
+            "description": "Defer a pending reminder to tomorrow because the member's message is off-topic or unrelated to the reminder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reminder_id": {"type": "integer"},
+                },
+                "required": ["reminder_id"],
+            },
+        },
+    },
+]
+
 
 class ToolRegistry:
     def __init__(self, vector_memory: VectorMemory):
@@ -189,6 +234,35 @@ class ToolRegistry:
             return "no relevant memories found"
         return "\n".join(f"- {r}" for r in results)
 
+    def complete_reminder(self, reminder_id: int) -> str:
+        with get_session() as s:
+            r = s.query(Reminder).filter_by(id=reminder_id).first()
+            if not r:
+                return "reminder not found"
+            r.done = True
+            r.pending_ack = False
+            log.info("reminder completed", reminder_id=reminder_id)
+        return "reminder marked done"
+
+    def snooze_reminder(self, reminder_id: int) -> str:
+        with get_session() as s:
+            r = s.query(Reminder).filter_by(id=reminder_id).first()
+            if not r:
+                return "reminder not found"
+            r.due_at = datetime.now() + timedelta(hours=1)
+            r.pending_ack = False
+            log.info("reminder snoozed 1h", reminder_id=reminder_id)
+        return "reminder snoozed by 1 hour"
+
+    def defer_reminder(self, reminder_id: int) -> str:
+        with get_session() as s:
+            r = s.query(Reminder).filter_by(id=reminder_id).first()
+            if not r:
+                return "reminder not found"
+            r.pending_ack = False
+            log.info("reminder deferred to tomorrow", reminder_id=reminder_id)
+        return "reminder deferred to tomorrow"
+
     @property
     def names_to_functions(self) -> dict[str, Callable[..., str]]:
         return {
@@ -197,4 +271,7 @@ class ToolRegistry:
             "save_event": self.save_event,
             "create_reminder": self.create_reminder,
             "recall_memories": self.recall_memories,
+            "complete_reminder": self.complete_reminder,
+            "snooze_reminder": self.snooze_reminder,
+            "defer_reminder": self.defer_reminder,
         }

@@ -7,6 +7,7 @@ from sam.core.llm.client import get_llm_client
 from sam.core.llm.tools import ToolRegistry
 from sam.core.memory.structured import configure_session
 from sam.core.memory.vector import VectorMemory
+from sam.core.scheduler.jobs import build_scheduler
 from sam.interfaces.dashboard.app import app as dashboard_app
 from sam.interfaces.messaging.discord_bot import SamBot
 from sam.logger import configure_logging
@@ -23,14 +24,20 @@ async def _run() -> None:
     registry = ToolRegistry(vector_memory=vector_memory)
     bot = SamBot(llm_client=llm_client, registry=registry)
 
+    scheduler = build_scheduler(bot)
+    scheduler.start()
+
     dashboard = uvicorn.Server(
         uvicorn.Config(dashboard_app, host="127.0.0.1", port=8765, log_level="info")
     )
 
-    await asyncio.gather(
-        dashboard.serve(),
-        bot.start(bot.token),
-    )
+    try:
+        await asyncio.gather(
+            dashboard.serve(),
+            bot.start(bot.token),
+        )
+    finally:
+        scheduler.shutdown()
 
 
 def start() -> None:

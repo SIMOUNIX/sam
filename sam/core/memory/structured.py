@@ -95,6 +95,7 @@ class Reminder(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     due_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pending_ack: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -177,6 +178,31 @@ def configure_session(db_path: str | Path | None = None) -> None:
     engine = get_engine(db_path)
     Base.metadata.create_all(engine)
     _SessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def get_due_reminders() -> list[Reminder]:
+    """Return reminders that are due, not done, and not already awaiting ack."""
+    with get_session() as s:
+        return (
+            s.query(Reminder)
+            .filter(
+                Reminder.due_at <= datetime.now(),
+                Reminder.done.is_(False),
+                Reminder.pending_ack.is_(False),
+            )
+            .all()
+        )
+
+
+def get_pending_reminders(member_discord_id: str) -> list[Reminder]:
+    """Return reminders awaiting acknowledgement from a member."""
+    with get_session() as s:
+        return (
+            s.query(Reminder)
+            .filter_by(member_discord_id=member_discord_id)
+            .filter(Reminder.pending_ack.is_(True), Reminder.done.is_(False))
+            .all()
+        )
 
 
 def get_member_by_channel(platform: str, platform_id: str) -> dict | None:

@@ -96,6 +96,9 @@ class Reminder(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pending_ack: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    discord_message_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -212,6 +215,13 @@ def get_pending_reminders(member_discord_id: str) -> list[Reminder]:
             .filter_by(member_discord_id=member_discord_id)
             .filter(Reminder.pending_ack.is_(True), Reminder.done.is_(False))
             .all()
+        )
+
+
+def get_reminder_by_message_id(discord_message_id: str) -> Reminder | None:
+    with get_session() as s:
+        return (
+            s.query(Reminder).filter_by(discord_message_id=discord_message_id).first()
         )
 
 

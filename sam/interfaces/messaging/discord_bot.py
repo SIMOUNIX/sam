@@ -1,28 +1,46 @@
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 
 import discord
 import structlog
 from dotenv import load_dotenv
 
 from sam.core.llm.client import MistralClient
-from sam.core.llm.tools import REMINDER_TOOLS, TOOLS, ToolRegistry
+from sam.core.llm.tools import TOOLS, ToolRegistry
 from sam.core.memory.structured import (
+    Reminder,
     Run,
     get_family_members,
     get_member_by_channel,
-    get_pending_reminders,
+    get_reminder_by_message_id,
     get_session,
 )
 
 load_dotenv()
 logger = structlog.get_logger()
 
+_SNOOZE_RE = re.compile(r"^\s*(\d+)\s*(m|h|d)\s*$", re.IGNORECASE)
+
+
+def _parse_snooze_minutes(text: str) -> int | None:
+    match = _SNOOZE_RE.match(text.strip())
+    if not match:
+        return None
+    value, unit = int(match.group(1)), match.group(2).lower()
+    if unit == "m":
+        return value
+    if unit == "h":
+        return value * 60
+    return value * 24 * 60
+
 
 class SamBot(discord.Client):
     def __init__(self, llm_client: MistralClient, registry: ToolRegistry):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.reactions = True
+        intents.dm_reactions = True
         super().__init__(intents=intents)
 
         self.llm_client = llm_client
@@ -57,10 +75,40 @@ class SamBot(discord.Client):
             ]
         return self._histories[discord_id]
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         logger.info(f"SAM ready — logged in as {self.user}")
 
-    async def on_message(self, message: discord.Message):
+    async def on_raw_reaction_add(
+        self, payload: discord.RawReactionActionEvent
+    ) -> None:
+        if self.user and payload.user_id == self.user.id:
+            return
+
+        reminder = get_reminder_by_message_id(str(payload.message_id))
+        if not reminder or reminder.done:
+            return
+
+        emoji = payload.emoji.name
+        user = await self.fetch_user(payload.user_id)
+
+        if emoji == "✅":
+            with get_session() as s:
+                r = s.query(Reminder).filter_by(id=reminder.id).first()
+                if r:
+                    r.done = True
+                    r.pending_ack = False
+            await user.send("✅ Reminder marked as done.")
+            logger.info("reminder completed via reaction", reminder_id=reminder.id)
+
+        elif emoji == "❌":
+            with get_session() as s:
+                r = s.query(Reminder).filter_by(id=reminder.id).first()
+                if r:
+                    s.delete(r)
+            await user.send("🗑️ Reminder removed.")
+            logger.info("reminder deleted via reaction", reminder_id=reminder.id)
+
+    async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user:
             return
 
@@ -68,8 +116,32 @@ class SamBot(discord.Client):
             return
 
         discord_id = str(message.author.id)
-        member_info = get_member_by_channel("discord", discord_id)
 
+        # Reply-based snooze: user replies to a reminder embed with 2m / 2h / 2d
+        if message.reference and message.reference.message_id:
+            reminder = get_reminder_by_message_id(str(message.reference.message_id))
+            if reminder and reminder.pending_ack and not reminder.done:
+                minutes = _parse_snooze_minutes(message.content)
+                if minutes:
+                    new_due = datetime.now() + timedelta(minutes=minutes)
+                    with get_session() as s:
+                        r = s.query(Reminder).filter_by(id=reminder.id).first()
+                        if r:
+                            r.due_at = new_due
+                            r.pending_ack = False
+                    if self.registry.schedule_fn:
+                        self.registry.schedule_fn(reminder.id, new_due)
+                    await message.channel.send(
+                        f"⏰ Got it, I'll remind you again in {message.content.strip()}."
+                    )
+                    logger.info(
+                        "reminder snoozed via reply",
+                        reminder_id=reminder.id,
+                        minutes=minutes,
+                    )
+                    return
+
+        member_info = get_member_by_channel("discord", discord_id)
         if not member_info:
             logger.warning("unknown_member", discord_id=discord_id)
             await message.channel.send("Sorry, I don't recognise you.")
@@ -77,23 +149,6 @@ class SamBot(discord.Client):
 
         async with message.channel.typing():
             history = self._get_history(discord_id, member_info)
-
-            pending = get_pending_reminders(discord_id)
-            if pending:
-                reminders_desc = "\n".join(
-                    f"- reminder_id={r.id}: {r.content}" for r in pending
-                )
-                history.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            f"PENDING REMINDERS awaiting acknowledgement:\n{reminders_desc}\n\n"
-                            "Based on the member's next message, call complete_reminder, snooze_reminder, "
-                            "or defer_reminder for each pending reminder. If the message is unrelated, call defer_reminder."
-                        ),
-                    }
-                )
-
             history.append(
                 {
                     "role": "user",
@@ -101,13 +156,11 @@ class SamBot(discord.Client):
                 }
             )
 
-            tools = TOOLS + REMINDER_TOOLS if pending else TOOLS
-
             status = "ok"
             try:
                 result = self.llm_client.chat(
                     messages=history,
-                    tools=tools,
+                    tools=TOOLS,
                     names_to_functions=self.registry.names_to_functions,
                 )
             except Exception as exc:
@@ -137,5 +190,5 @@ class SamBot(discord.Client):
 
         await message.channel.send(result.content)
 
-    def run_bot(self):
+    def run_bot(self) -> None:
         self.run(self.token)

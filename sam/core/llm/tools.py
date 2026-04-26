@@ -4,8 +4,8 @@ from typing import Callable, Optional
 import structlog
 
 from sam.core.memory.structured import Episode, Event, Memory, Reminder, get_session
-from sam.core.scheduler.jobs import _tomorrow_9am
 from sam.core.memory.vector import VectorMemory
+from sam.core.scheduler.jobs import _tomorrow_9am
 
 log = structlog.get_logger()
 

@@ -27,10 +27,15 @@ async def _fire_reminder(bot: discord.Client, reminder_id: int) -> None:
 
     try:
         user = await bot.fetch_user(int(member_discord_id))
-        await user.send(
-            f"Hey! Just checking in — did you get to this?\n> {content}\n\n"
-            "Reply **yes** if done, **snooze** to push it back 1 hour, or just ignore this and I'll remind you tomorrow."
+        embed = discord.Embed(
+            title="⏰ Reminder",
+            description=content,
+            color=0xF4A732,
         )
+        embed.set_footer(text="✅ done  ·  ❌ remove  ·  reply 2m / 2h / 2d to snooze")
+        msg = await user.send(embed=embed)
+        await msg.add_reaction("✅")
+        await msg.add_reaction("❌")
     except Exception as exc:
         log.error("reminder dispatch failed", reminder_id=reminder_id, error=str(exc))
         return
@@ -40,6 +45,7 @@ async def _fire_reminder(bot: discord.Client, reminder_id: int) -> None:
         if r:
             r.pending_ack = True
             r.due_at = _tomorrow_9am()
+            r.discord_message_id = str(msg.id)
     log.info("reminder fired", reminder_id=reminder_id, member=member_discord_id)
 
 

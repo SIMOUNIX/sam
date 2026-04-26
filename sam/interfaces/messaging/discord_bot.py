@@ -97,7 +97,7 @@ class SamBot(discord.Client):
             history.append(
                 {
                     "role": "user",
-                    "content": f"[{datetime.now().strftime('%H:%M')}] {message.content}",
+                    "content": f"[{datetime.now().strftime('%A, %B %d %Y at %H:%M')}] {message.content}",
                 }
             )
 

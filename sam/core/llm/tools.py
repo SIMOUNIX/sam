@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
-from typing import Callable
+from typing import Callable, Optional
 
 import structlog
 
 from sam.core.memory.structured import Episode, Event, Memory, Reminder, get_session
+from sam.core.scheduler.jobs import _tomorrow_9am
 from sam.core.memory.vector import VectorMemory
 
 log = structlog.get_logger()
@@ -134,13 +135,17 @@ REMINDER_TOOLS = [
         "type": "function",
         "function": {
             "name": "snooze_reminder",
-            "description": "Snooze a pending reminder by 1 hour because the member asked to be reminded later.",
+            "description": "Snooze a pending reminder for a given number of minutes. Use the duration the member specified, or 60 minutes if unspecified.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "reminder_id": {"type": "integer"},
+                    "minutes": {
+                        "type": "integer",
+                        "description": "How many minutes to snooze for.",
+                    },
                 },
-                "required": ["reminder_id"],
+                "required": ["reminder_id", "minutes"],
             },
         },
     },
@@ -162,8 +167,13 @@ REMINDER_TOOLS = [
 
 
 class ToolRegistry:
-    def __init__(self, vector_memory: VectorMemory):
+    def __init__(
+        self,
+        vector_memory: VectorMemory,
+        schedule_fn: Optional[Callable[[int, datetime], None]] = None,
+    ):
         self.vector_memory = vector_memory
+        self.schedule_fn = schedule_fn
 
     def save_memory(self, member_discord_id: str, content: str) -> str:
         with get_session() as s:
@@ -211,20 +221,24 @@ class ToolRegistry:
         return "event saved"
 
     def create_reminder(self, member_discord_id: str, content: str, due_at: str) -> str:
+        due = datetime.fromisoformat(due_at)
         with get_session() as s:
-            s.add(
-                Reminder(
-                    member_discord_id=member_discord_id,
-                    content=content,
-                    due_at=datetime.fromisoformat(due_at),
-                )
+            reminder = Reminder(
+                member_discord_id=member_discord_id,
+                content=content,
+                due_at=due,
             )
+            s.add(reminder)
+            s.flush()
+            reminder_id = reminder.id
             log.info(
                 "reminder created",
                 member=member_discord_id,
                 content=content,
                 due_at=due_at,
             )
+        if self.schedule_fn:
+            self.schedule_fn(reminder_id, due)
         return "reminder created"
 
     def recall_memories(self, member_discord_id: str, query: str) -> str:
@@ -244,23 +258,30 @@ class ToolRegistry:
             log.info("reminder completed", reminder_id=reminder_id)
         return "reminder marked done"
 
-    def snooze_reminder(self, reminder_id: int) -> str:
+    def snooze_reminder(self, reminder_id: int, minutes: int) -> str:
+        new_due = datetime.now() + timedelta(minutes=minutes)
         with get_session() as s:
             r = s.query(Reminder).filter_by(id=reminder_id).first()
             if not r:
                 return "reminder not found"
-            r.due_at = datetime.now() + timedelta(hours=1)
+            r.due_at = new_due
             r.pending_ack = False
-            log.info("reminder snoozed 1h", reminder_id=reminder_id)
-        return "reminder snoozed by 1 hour"
+            log.info("reminder snoozed", reminder_id=reminder_id, minutes=minutes)
+        if self.schedule_fn:
+            self.schedule_fn(reminder_id, new_due)
+        return f"reminder snoozed by {minutes} minutes"
 
     def defer_reminder(self, reminder_id: int) -> str:
+        new_due = _tomorrow_9am()
         with get_session() as s:
             r = s.query(Reminder).filter_by(id=reminder_id).first()
             if not r:
                 return "reminder not found"
+            r.due_at = new_due
             r.pending_ack = False
             log.info("reminder deferred to tomorrow", reminder_id=reminder_id)
+        if self.schedule_fn:
+            self.schedule_fn(reminder_id, new_due)
         return "reminder deferred to tomorrow"
 
     @property

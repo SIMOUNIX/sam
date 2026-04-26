@@ -194,6 +194,16 @@ def get_due_reminders() -> list[Reminder]:
         )
 
 
+def get_active_reminders() -> list[Reminder]:
+    """Return all reminders that still need to be scheduled (not done, not awaiting ack)."""
+    with get_session() as s:
+        return (
+            s.query(Reminder)
+            .filter(Reminder.done.is_(False), Reminder.pending_ack.is_(False))
+            .all()
+        )
+
+
 def get_pending_reminders(member_discord_id: str) -> list[Reminder]:
     """Return reminders awaiting acknowledgement from a member."""
     with get_session() as s:

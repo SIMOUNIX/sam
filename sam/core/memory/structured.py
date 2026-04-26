@@ -28,15 +28,12 @@ class Base(DeclarativeBase):
 
 
 class Memory(Base):
-    """Semantic facts, preferences, and habits about a member.
-
-    Saved by the agent via the ``save_memory`` tool.
-    """
-
     __tablename__ = "memories"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id"), index=True, nullable=False
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
@@ -47,15 +44,12 @@ class Memory(Base):
 
 
 class Episode(Base):
-    """Episodic memory of a past interaction or event involving a member.
-
-    Saved by the agent via the ``save_episode`` tool.
-    """
-
     __tablename__ = "episodes"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id"), index=True, nullable=False
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -64,15 +58,12 @@ class Episode(Base):
 
 
 class Event(Base):
-    """Calendar event for a member.
-
-    Saved by the agent via the ``save_event`` tool.
-    """
-
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id"), index=True, nullable=False
+    )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -83,15 +74,12 @@ class Event(Base):
 
 
 class Reminder(Base):
-    """A reminder for a member with a due date.
-
-    Saved by the agent via the ``create_reminder`` tool.
-    """
-
     __tablename__ = "reminders"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id"), index=True, nullable=False
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     due_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -105,12 +93,12 @@ class Reminder(Base):
 
 
 class Run(Base):
-    """One LLM call triggered by a Discord message."""
-
     __tablename__ = "runs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_discord_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id"), index=True, nullable=False
+    )
     model: Mapped[str] = mapped_column(String, nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -147,8 +135,6 @@ class Member(Base):
 
 
 class Channel(Base):
-    """A communication channel linking a member to a platform (discord, slack, etc.)."""
-
     __tablename__ = "channels"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -183,8 +169,20 @@ def configure_session(db_path: str | Path | None = None) -> None:
     _SessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+def get_platform_id(member_id: int, platform: str) -> str | None:
+    """Return the platform-specific ID for a member on a given platform."""
+    with get_session() as s:
+        ch = s.query(Channel).filter_by(member_id=member_id, platform=platform).first()
+        return ch.platform_id if ch else None
+
+
+def get_member_name(member_id: int) -> str:
+    with get_session() as s:
+        m = s.query(Member).filter_by(id=member_id).first()
+        return m.firstname if m else str(member_id)
+
+
 def get_due_reminders() -> list[Reminder]:
-    """Return reminders that are due, not done, and not already awaiting ack."""
     with get_session() as s:
         return (
             s.query(Reminder)
@@ -198,22 +196,10 @@ def get_due_reminders() -> list[Reminder]:
 
 
 def get_active_reminders() -> list[Reminder]:
-    """Return all reminders that still need to be scheduled (not done, not awaiting ack)."""
     with get_session() as s:
         return (
             s.query(Reminder)
             .filter(Reminder.done.is_(False), Reminder.pending_ack.is_(False))
-            .all()
-        )
-
-
-def get_pending_reminders(member_discord_id: str) -> list[Reminder]:
-    """Return reminders awaiting acknowledgement from a member."""
-    with get_session() as s:
-        return (
-            s.query(Reminder)
-            .filter_by(member_discord_id=member_discord_id)
-            .filter(Reminder.pending_ack.is_(True), Reminder.done.is_(False))
             .all()
         )
 
@@ -226,7 +212,6 @@ def get_reminder_by_message_id(discord_message_id: str) -> Reminder | None:
 
 
 def get_member_by_channel(platform: str, platform_id: str) -> dict | None:
-    """Return member info dict for the given platform channel, or None if unknown."""
     with get_session() as s:
         ch = (
             s.query(Channel)
@@ -248,7 +233,6 @@ def get_member_by_channel(platform: str, platform_id: str) -> dict | None:
 
 
 def get_family_members(family_id: int) -> list[dict]:
-    """Return all members of a family with their channels."""
     with get_session() as s:
         members = s.query(Member).filter_by(family_id=family_id).all()
         result = []
@@ -265,7 +249,6 @@ def get_family_members(family_id: int) -> list[dict]:
 
 
 def get_all_members_flat() -> list[dict]:
-    """Return all members as a flat list with family name and channels."""
     with get_session() as s:
         members = s.query(Member).all()
         result = []
@@ -281,26 +264,6 @@ def get_all_members_flat() -> list[dict]:
                     "channels": {c.platform: c.platform_id for c in channels},
                 }
             )
-        return result
-
-
-def build_member_lookup() -> dict[str, dict]:
-    """Build a discord_id → {firstname, family} lookup from channels table."""
-    with get_session() as s:
-        discord_channels = s.query(Channel).filter_by(platform="discord").all()
-        result = {}
-        for ch in discord_channels:
-            member = s.query(Member).filter_by(id=ch.member_id).first()
-            family = (
-                s.query(Family).filter_by(id=member.family_id).first()
-                if member
-                else None
-            )
-            if member and family:
-                result[ch.platform_id] = {
-                    "firstname": member.firstname,
-                    "family": family.name,
-                }
         return result
 
 

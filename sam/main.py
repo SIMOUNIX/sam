@@ -4,6 +4,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 from sam.core.llm.client import get_llm_client
+from sam.core.llm.conversation import ConversationManager
 from sam.core.llm.tools import ToolRegistry
 from sam.core.memory.structured import configure_session
 from sam.core.memory.vector import VectorMemory
@@ -26,13 +27,15 @@ async def _run() -> None:
     llm_client = get_llm_client()
     vector_memory = VectorMemory(path="~/.sam/vector.chroma")
     scheduler = build_scheduler()
-    bot = SamBot(llm_client=llm_client, registry=None)  # patched below
 
-    registry = ToolRegistry(
-        vector_memory=vector_memory,
+    registry = ToolRegistry(vector_memory=vector_memory)
+    conversation_manager = ConversationManager(llm_client=llm_client, registry=registry)
+
+    bot = SamBot(
+        conversation_manager=conversation_manager,
         schedule_fn=lambda rid, due: schedule_reminder(scheduler, bot, rid, due),
     )
-    bot.registry = registry
+    registry.schedule_fn = lambda rid, due: schedule_reminder(scheduler, bot, rid, due)
 
     scheduler.start()
     hydrate_reminders(scheduler, bot)

@@ -4,7 +4,12 @@ import discord
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from sam.core.memory.structured import Reminder, get_active_reminders, get_session
+from sam.core.memory.structured import (
+    Reminder,
+    get_active_reminders,
+    get_platform_id,
+    get_session,
+)
 
 log = structlog.get_logger()
 
@@ -23,10 +28,19 @@ async def _fire_reminder(bot: discord.Client, reminder_id: int) -> None:
         if not reminder or reminder.done or reminder.pending_ack:
             return
         content = reminder.content
-        member_discord_id = reminder.member_discord_id
+        member_id = reminder.member_id
+
+    discord_id = get_platform_id(member_id, "discord")
+    if not discord_id:
+        log.error(
+            "no discord channel for member",
+            member_id=member_id,
+            reminder_id=reminder_id,
+        )
+        return
 
     try:
-        user = await bot.fetch_user(int(member_discord_id))
+        user = await bot.fetch_user(int(discord_id))
         embed = discord.Embed(
             title="⏰ Reminder",
             description=content,
@@ -46,7 +60,7 @@ async def _fire_reminder(bot: discord.Client, reminder_id: int) -> None:
             r.pending_ack = True
             r.due_at = _tomorrow_9am()
             r.discord_message_id = str(msg.id)
-    log.info("reminder fired", reminder_id=reminder_id, member=member_discord_id)
+    log.info("reminder fired", reminder_id=reminder_id, member_id=member_id)
 
 
 def schedule_reminder(

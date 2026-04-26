@@ -36,14 +36,14 @@ def dump() -> None:
 
     print_table(
         "Memories",
-        [[m.member_discord_id, m.content, str(m.created_at)] for m in memories],
+        [[str(m.member_id), m.content, str(m.created_at)] for m in memories],
         [("Member ID", "cyan"), ("Content", "white"), ("Saved at", "dim")],
     )
 
     print_table(
         "Episodes",
         [
-            [e.member_discord_id, e.content, e.context or "", str(e.created_at)]
+            [str(e.member_id), e.content, e.context or "", str(e.created_at)]
             for e in episodes
         ],
         [
@@ -58,7 +58,7 @@ def dump() -> None:
         "Events",
         [
             [
-                v.member_discord_id,
+                str(v.member_id),
                 v.title,
                 v.description or "",
                 str(v.start_at),
@@ -78,7 +78,7 @@ def dump() -> None:
     print_table(
         "Reminders",
         [
-            [r.member_discord_id, r.content, str(r.due_at), "✓" if r.done else "✗"]
+            [str(r.member_id), r.content, str(r.due_at), "✓" if r.done else "✗"]
             for r in reminders
         ],
         [

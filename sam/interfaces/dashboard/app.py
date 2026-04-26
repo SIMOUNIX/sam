@@ -24,9 +24,9 @@ from sam.core.memory.structured import (
     Memory,
     Reminder,
     Run,
-    build_member_lookup,
     configure_session,
     get_all_members_flat,
+    get_member_name,
     get_session,
 )
 from sam.core.memory.vector import VectorMemory
@@ -82,11 +82,6 @@ def _format_tools() -> list[dict[str, Any]]:
     return out
 
 
-def _member_name(lookup: dict[str, dict], discord_id: str) -> str:
-    entry = lookup.get(discord_id)
-    return entry["firstname"] if entry else discord_id
-
-
 def _vector_count() -> int | None:
     global _vector_memory
     try:
@@ -113,7 +108,6 @@ async def _startup() -> None:
 
 @app.get("/api/state")
 async def state() -> JSONResponse:
-    lookup = build_member_lookup()
     members_flat = get_all_members_flat()
 
     with get_session() as s:
@@ -170,7 +164,7 @@ async def state() -> JSONResponse:
             "memories": [
                 {
                     "id": m.id,
-                    "member": _member_name(lookup, m.member_discord_id),
+                    "member": get_member_name(m.member_id),
                     "content": m.content,
                     "at": _iso(m.created_at),
                 }
@@ -179,7 +173,7 @@ async def state() -> JSONResponse:
             "episodes": [
                 {
                     "id": e.id,
-                    "member": _member_name(lookup, e.member_discord_id),
+                    "member": get_member_name(e.member_id),
                     "content": e.content,
                     "context": e.context,
                     "at": _iso(e.created_at),
@@ -189,7 +183,7 @@ async def state() -> JSONResponse:
             "events": [
                 {
                     "id": v.id,
-                    "member": _member_name(lookup, v.member_discord_id),
+                    "member": get_member_name(v.member_id),
                     "title": v.title,
                     "description": v.description,
                     "start_at": _iso(v.start_at),
@@ -200,7 +194,7 @@ async def state() -> JSONResponse:
             "reminders": [
                 {
                     "id": r.id,
-                    "member": _member_name(lookup, r.member_discord_id),
+                    "member": get_member_name(r.member_id),
                     "content": r.content,
                     "due_at": _iso(r.due_at),
                 }
@@ -404,7 +398,6 @@ async def stats_daily(days: int = 7) -> JSONResponse:
 @app.get("/api/runs")
 async def runs(limit: int = 20) -> JSONResponse:
     limit = max(1, min(limit, 100))
-    lookup = build_member_lookup()
 
     with get_session() as s:
         recent = s.query(Run).order_by(Run.created_at.desc()).limit(limit).all()
@@ -413,7 +406,7 @@ async def runs(limit: int = 20) -> JSONResponse:
         [
             {
                 "id": r.id,
-                "member": _member_name(lookup, r.member_discord_id),
+                "member": get_member_name(r.member_id),
                 "model": r.model,
                 "input_tokens": r.input_tokens,
                 "output_tokens": r.output_tokens,

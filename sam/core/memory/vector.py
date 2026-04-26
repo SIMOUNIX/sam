@@ -15,20 +15,18 @@ class VectorMemory:
         response = self.embedder.embeddings.create(model="mistral-embed", inputs=[text])
         return response.data[0].embedding
 
-    def store(self, id: int, member_discord_id: str, type: str, text: str) -> None:
+    def store(self, id: int, member_id: int, type: str, text: str) -> None:
         self.collection.add(
             ids=[str(id)],
             documents=[text],
-            metadatas=[{"member_discord_id": member_discord_id, "type": type}],
+            metadatas=[{"member_id": str(member_id), "type": type}],
             embeddings=[self._embed(text)],
         )
 
-    def search(
-        self, member_discord_id: str, query: str, n_results: int = 5
-    ) -> list[str]:
+    def search(self, member_id: int, query: str, n_results: int = 5) -> list[str]:
         q_res = self.collection.query(
             query_embeddings=[self._embed(query)],
             n_results=n_results,
-            where={"member_discord_id": member_discord_id},
+            where={"member_id": str(member_id)},
         )
         return q_res["documents"][0] if q_res["documents"] else []

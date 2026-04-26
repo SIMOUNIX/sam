@@ -18,13 +18,13 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "member_discord_id": {"type": "string"},
+                    "member_id": {"type": "integer"},
                     "content": {
                         "type": "string",
                         "description": "The fact to remember.",
                     },
                 },
-                "required": ["member_discord_id", "content"],
+                "required": ["member_id", "content"],
             },
         },
     },
@@ -36,14 +36,14 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "member_discord_id": {"type": "string"},
+                    "member_id": {"type": "integer"},
                     "content": {"type": "string", "description": "What happened."},
                     "context": {
                         "type": "string",
                         "description": "Additional context (optional).",
                     },
                 },
-                "required": ["member_discord_id", "content"],
+                "required": ["member_id", "content"],
             },
         },
     },
@@ -55,7 +55,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "member_discord_id": {"type": "string"},
+                    "member_id": {"type": "integer"},
                     "title": {"type": "string"},
                     "description": {
                         "type": "string",
@@ -70,7 +70,7 @@ TOOLS = [
                         "description": "ISO 8601 datetime (optional).",
                     },
                 },
-                "required": ["member_discord_id", "title", "description", "start_at"],
+                "required": ["member_id", "title", "description", "start_at"],
             },
         },
     },
@@ -82,7 +82,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "member_discord_id": {"type": "string"},
+                    "member_id": {"type": "integer"},
                     "content": {
                         "type": "string",
                         "description": "What to remind about.",
@@ -92,7 +92,7 @@ TOOLS = [
                         "description": "ISO 8601 datetime when the reminder fires.",
                     },
                 },
-                "required": ["member_discord_id", "content", "due_at"],
+                "required": ["member_id", "content", "due_at"],
             },
         },
     },
@@ -104,13 +104,13 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "member_discord_id": {"type": "string"},
+                    "member_id": {"type": "integer"},
                     "query": {
                         "type": "string",
                         "description": "What to look for.",
                     },
                 },
-                "required": ["member_discord_id", "query"],
+                "required": ["member_id", "query"],
             },
         },
     },
@@ -175,31 +175,29 @@ class ToolRegistry:
         self.vector_memory = vector_memory
         self.schedule_fn = schedule_fn
 
-    def save_memory(self, member_discord_id: str, content: str) -> str:
+    def save_memory(self, member_id: int, content: str) -> str:
         with get_session() as s:
-            mem = Memory(member_discord_id=member_discord_id, content=content)
+            mem = Memory(member_id=member_id, content=content)
             s.add(mem)
             s.flush()
-            log.info("memory saved", member=member_discord_id, content=content)
-            self.vector_memory.store(mem.id, member_discord_id, "memory", content)
+            log.info("memory saved", member=member_id, content=content)
+            self.vector_memory.store(mem.id, member_id, "memory", content)
         return "memory saved"
 
     def save_episode(
-        self, member_discord_id: str, content: str, context: str | None = None
+        self, member_id: int, content: str, context: str | None = None
     ) -> str:
         with get_session() as s:
-            ep = Episode(
-                member_discord_id=member_discord_id, content=content, context=context
-            )
+            ep = Episode(member_id=member_id, content=content, context=context)
             s.add(ep)
             s.flush()
-            log.info("episode saved", member=member_discord_id, content=content)
-            self.vector_memory.store(ep.id, member_discord_id, "episode", content)
+            log.info("episode saved", member=member_id, content=content)
+            self.vector_memory.store(ep.id, member_id, "episode", content)
         return "episode saved"
 
     def save_event(
         self,
-        member_discord_id: str,
+        member_id: int,
         title: str,
         start_at: str,
         description: str,
@@ -208,42 +206,33 @@ class ToolRegistry:
         with get_session() as s:
             s.add(
                 Event(
-                    member_discord_id=member_discord_id,
+                    member_id=member_id,
                     title=title,
                     description=description,
                     start_at=datetime.fromisoformat(start_at),
                     end_at=datetime.fromisoformat(end_at) if end_at else None,
                 )
             )
-            log.info(
-                "event saved", member=member_discord_id, title=title, start_at=start_at
-            )
+            log.info("event saved", member=member_id, title=title, start_at=start_at)
         return "event saved"
 
-    def create_reminder(self, member_discord_id: str, content: str, due_at: str) -> str:
+    def create_reminder(self, member_id: int, content: str, due_at: str) -> str:
         due = datetime.fromisoformat(due_at)
         with get_session() as s:
-            reminder = Reminder(
-                member_discord_id=member_discord_id,
-                content=content,
-                due_at=due,
-            )
+            reminder = Reminder(member_id=member_id, content=content, due_at=due)
             s.add(reminder)
             s.flush()
             reminder_id = reminder.id
             log.info(
-                "reminder created",
-                member=member_discord_id,
-                content=content,
-                due_at=due_at,
+                "reminder created", member=member_id, content=content, due_at=due_at
             )
         if self.schedule_fn:
             self.schedule_fn(reminder_id, due)
         return "reminder created"
 
-    def recall_memories(self, member_discord_id: str, query: str) -> str:
-        log.info("recalling memories", member=member_discord_id, query=query)
-        results = self.vector_memory.search(member_discord_id, query)
+    def recall_memories(self, member_id: int, query: str) -> str:
+        log.info("recalling memories", member=member_id, query=query)
+        results = self.vector_memory.search(member_id, query)
         if not results:
             return "no relevant memories found"
         return "\n".join(f"- {r}" for r in results)

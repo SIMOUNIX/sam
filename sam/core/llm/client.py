@@ -67,7 +67,23 @@ class MistralClient:
 
         message = response.choices[0].message
         while message is not None and message.tool_calls:
-            messages.append(message.model_dump())  # type: ignore[arg-type]
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in message.tool_calls
+                    ],
+                }
+            )
 
             for tool_call in message.tool_calls:
                 tool_calls_count += 1

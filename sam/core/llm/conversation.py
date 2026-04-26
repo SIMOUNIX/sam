@@ -117,6 +117,7 @@ class ConversationManager:
 
     def chat(self, member_info: dict, text: str) -> str:
         history = self._get_history(member_info["member_id"], member_info)
+        checkpoint = len(history)
         history.append(
             {
                 "role": "user",
@@ -133,7 +134,7 @@ class ConversationManager:
             )
         except Exception as exc:
             status = "error"
-            history.pop()
+            del history[checkpoint:]  # roll back user msg + any partial tool exchanges
             log.error("llm_chat_failed", error=str(exc))
             raise
 

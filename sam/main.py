@@ -11,6 +11,7 @@ from sam.core.memory.vector import VectorMemory
 from sam.core.scheduler.jobs import (
     build_scheduler,
     hydrate_reminders,
+    schedule_event_warning,
     schedule_reminder,
 )
 from sam.interfaces.dashboard.app import app as dashboard_app
@@ -36,6 +37,9 @@ async def _run() -> None:
         schedule_fn=lambda rid, due: schedule_reminder(scheduler, bot, rid, due),
     )
     registry.schedule_fn = lambda rid, due: schedule_reminder(scheduler, bot, rid, due)
+    registry.schedule_event_fn = lambda eid, start: schedule_event_warning(
+        scheduler, bot, eid, start
+    )
 
     scheduler.start()
     hydrate_reminders(scheduler, bot)

@@ -171,9 +171,11 @@ class ToolRegistry:
         self,
         vector_memory: VectorMemory,
         schedule_fn: Optional[Callable[[int, datetime], None]] = None,
+        schedule_event_fn: Optional[Callable[[int, datetime], None]] = None,
     ):
         self.vector_memory = vector_memory
         self.schedule_fn = schedule_fn
+        self.schedule_event_fn = schedule_event_fn
 
     def save_memory(self, member_id: int, content: str) -> str:
         with get_session() as s:
@@ -203,17 +205,21 @@ class ToolRegistry:
         description: str,
         end_at: str | None = None,
     ) -> str:
+        start = datetime.fromisoformat(start_at)
         with get_session() as s:
-            s.add(
-                Event(
-                    member_id=member_id,
-                    title=title,
-                    description=description,
-                    start_at=datetime.fromisoformat(start_at),
-                    end_at=datetime.fromisoformat(end_at) if end_at else None,
-                )
+            event = Event(
+                member_id=member_id,
+                title=title,
+                description=description,
+                start_at=start,
+                end_at=datetime.fromisoformat(end_at) if end_at else None,
             )
+            s.add(event)
+            s.flush()
+            event_id = event.id
             log.info("event saved", member=member_id, title=title, start_at=start_at)
+        if self.schedule_event_fn:
+            self.schedule_event_fn(event_id, start)
         return "event saved"
 
     def create_reminder(self, member_id: int, content: str, due_at: str) -> str:

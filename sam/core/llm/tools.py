@@ -114,6 +114,24 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_schedule",
+            "description": "Get upcoming events and pending reminders for a member.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_id": {"type": "integer"},
+                    "days": {
+                        "type": "integer",
+                        "description": "How many days ahead to look. Default 7.",
+                    },
+                },
+                "required": ["member_id"],
+            },
+        },
+    },
 ]
 
 REMINDER_TOOLS = [
@@ -236,6 +254,49 @@ class ToolRegistry:
             self.schedule_fn(reminder_id, due)
         return "reminder created"
 
+    def get_schedule(self, member_id: int, days: int = 7) -> str:
+        now = datetime.now()
+        until = now + timedelta(days=days)
+        with get_session() as s:
+            events = (
+                s.query(Event)
+                .filter(
+                    Event.member_id == member_id,
+                    Event.start_at >= now,
+                    Event.start_at <= until,
+                )
+                .order_by(Event.start_at)
+                .all()
+            )
+            reminders = (
+                s.query(Reminder)
+                .filter(Reminder.member_id == member_id, Reminder.done.is_(False))
+                .order_by(Reminder.due_at)
+                .all()
+            )
+
+        lines: list[str] = []
+        if events:
+            lines.append("Upcoming events:")
+            for e in events:
+                end = f" → {e.end_at.strftime('%H:%M')}" if e.end_at else ""
+                lines.append(
+                    f"  - {e.start_at.strftime('%a %b %d at %H:%M')}{end}: {e.title}"
+                )
+        else:
+            lines.append("No upcoming events.")
+
+        if reminders:
+            lines.append("Pending reminders:")
+            for r in reminders:
+                lines.append(
+                    f"  - {r.due_at.strftime('%a %b %d at %H:%M')}: {r.content}"
+                )
+        else:
+            lines.append("No pending reminders.")
+
+        return "\n".join(lines)
+
     def recall_memories(self, member_id: int, query: str) -> str:
         log.info("recalling memories", member=member_id, query=query)
         results = self.vector_memory.search(member_id, query)
@@ -279,13 +340,14 @@ class ToolRegistry:
             self.schedule_fn(reminder_id, new_due)
         return "reminder deferred to tomorrow"
 
-    @property
+    @property  # can be access without parentheses
     def names_to_functions(self) -> dict[str, Callable[..., str]]:
         return {
             "save_memory": self.save_memory,
             "save_episode": self.save_episode,
             "save_event": self.save_event,
             "create_reminder": self.create_reminder,
+            "get_schedule": self.get_schedule,
             "recall_memories": self.recall_memories,
             "complete_reminder": self.complete_reminder,
             "snooze_reminder": self.snooze_reminder,
